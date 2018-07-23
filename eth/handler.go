@@ -122,7 +122,7 @@ func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, ne
 	}
 	// Initiate a sub-protocol for every implemented version we can handle
 
-	manager.SubProtocols = make([]p2p.Protocol, 0, len(ProtocolVersions))
+	manager.SubProtocols = make([]p2p.Protocol, 0, len(ProtocolVersions)+len(ApaProtocolVersions))
 
 	// eth
 	for i, version := range ProtocolVersions {
@@ -136,6 +136,41 @@ func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, ne
 			Name:    ProtocolName,
 			Version: version,
 			Length:  ProtocolLengths[i],
+			Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
+				peer := manager.newPeer(int(version), p, rw)
+				select {
+				case manager.newPeerCh <- peer:
+					manager.wg.Add(1)
+					defer manager.wg.Done()
+					return manager.handle(peer)
+				case <-manager.quitSync:
+					return p2p.DiscQuitting
+				}
+			},
+			NodeInfo: func() interface{} {
+				return manager.NodeInfo()
+			},
+			PeerInfo: func(id discover.NodeID) interface{} {
+				if p := manager.peers.Peer(fmt.Sprintf("%x", id[:8])); p != nil {
+					return p.Info()
+				}
+				return nil
+			},
+		})
+	}
+
+	// apa
+	for i, apaVersion := range ApaProtocolVersions {
+		// Skip protocol version if incompatible with the mode of operation
+		if mode == downloader.FastSync {
+			continue
+		}
+		// Compatible; initialise the sub-protocol
+		version := apaVersion // Closure for the run
+		manager.SubProtocols = append(manager.SubProtocols, p2p.Protocol{
+			Name:    ApaProtocolName,
+			Version: version,
+			Length:  ApaProtocolLengths[i],
 			Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 				peer := manager.newPeer(int(version), p, rw)
 				select {

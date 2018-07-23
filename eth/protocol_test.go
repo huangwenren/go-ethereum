@@ -232,6 +232,7 @@ func testSendTestMsg(t *testing.T, protocol int) {
 	defer peer.close()
 
 	p2p.Send(peer.app, 0x11, "sent")
+
 	msg, err := peer.app.ReadMsg()
 	if err != nil {
 		t.Fatalf("failed to read node data response: %v", err)
