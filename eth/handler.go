@@ -121,7 +121,10 @@ func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, ne
 		manager.fastSync = uint32(1)
 	}
 	// Initiate a sub-protocol for every implemented version we can handle
-	manager.SubProtocols = make([]p2p.Protocol, 0, len(ProtocolVersions))
+
+	manager.SubProtocols = make([]p2p.Protocol, 0, len(ProtocolVersions)+len(ApaProtocolVersions))
+
+	// eth
 	for i, version := range ProtocolVersions {
 		// Skip protocol version if incompatible with the mode of operation
 		if mode == downloader.FastSync && version < eth63 {
@@ -155,6 +158,42 @@ func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, ne
 			},
 		})
 	}
+
+	// apa
+	for i, apaVersion := range ApaProtocolVersions {
+		// Skip protocol version if incompatible with the mode of operation
+		if mode == downloader.FastSync {
+			continue
+		}
+		// Compatible; initialise the sub-protocol
+		version := apaVersion // Closure for the run
+		manager.SubProtocols = append(manager.SubProtocols, p2p.Protocol{
+			Name:    ApaProtocolName,
+			Version: version,
+			Length:  ApaProtocolLengths[i],
+			Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
+				peer := manager.newPeer(int(version), p, rw)
+				select {
+				case manager.newPeerCh <- peer:
+					manager.wg.Add(1)
+					defer manager.wg.Done()
+					return manager.handle(peer)
+				case <-manager.quitSync:
+					return p2p.DiscQuitting
+				}
+			},
+			NodeInfo: func() interface{} {
+				return manager.NodeInfo()
+			},
+			PeerInfo: func(id discover.NodeID) interface{} {
+				if p := manager.peers.Peer(fmt.Sprintf("%x", id[:8])); p != nil {
+					return p.Info()
+				}
+				return nil
+			},
+		})
+	}
+
 	if len(manager.SubProtocols) == 0 {
 		return nil, errIncompatibleConfig
 	}
@@ -681,6 +720,37 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			p.MarkTransaction(tx.Hash())
 		}
 		pm.txpool.AddRemotes(txs)
+
+	// New apa mag handle functions here
+	case p.version >= apa01 && msg.Code == SendTestMsg:
+		// Code as transaction handler
+		//if atomic.LoadUint32(&pm.acceptTxs) == 0 {
+		//	break
+		//}
+		// Test msg
+		//var txs []*types.Transaction
+		//if err := msg.Decode(&txs); err != nil {
+		//	return errResp(ErrDecode, "msg %v: %v", msg, err)
+		//}
+		//for i, tx := range txs {
+		// Validate and mark the remote transaction
+		//	if tx == nil {
+		//		return errResp(ErrDecode, "transaction %d is nil", i)
+		//	}
+		//p.MarkTransaction(tx.Hash())
+		//	fmt.Println("Test msg send:", i, tx)
+		//}
+		//pm.txpool.AddRemotes(txs)
+
+		// Time consuming works, here is chain data packaging
+		msgStream := rlp.NewStream(msg.Payload, uint64(msg.Size))
+		if _, err := msgStream.List(); err != nil {
+			return err
+		}
+
+		// Add reply here
+		rplMsg := "got"
+		return p.SendRecvMsg(rplMsg)
 
 	default:
 		return errResp(ErrInvalidMsgCode, "%v", msg.Code)

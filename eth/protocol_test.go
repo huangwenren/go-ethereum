@@ -221,3 +221,32 @@ func TestGetBlockHeadersDataEncodeDecode(t *testing.T) {
 		}
 	}
 }
+
+func TestSendTransactions01(t *testing.T) { testSendTestMsg(t, 71) }
+
+func testSendTestMsg(t *testing.T, protocol int) {
+	// Assemble the test environment
+	pm, db := newTestProtocolManagerMust(t, downloader.FullSync, 4, nil, nil)
+	peer, _ := newTestPeer("peer", protocol, pm, true)
+	defer peer.close()
+
+	// Time consuming works, here is fetching for now the entire chain db
+	hashes := []common.Hash{}
+	for _, key := range db.Keys() {
+		if len(key) == len(common.Hash{}) {
+			hashes = append(hashes, common.BytesToHash(key))
+		}
+	}
+
+	// SubProtocol test here, hashes is the source for work of msg handler
+	// which can be replaced with other data
+	p2p.Send(peer.app, 0x11, hashes)
+	msg, err := peer.app.ReadMsg()
+	if err != nil {
+		t.Fatalf("failed to read test data response: %v", err)
+	}
+	if msg.Code != 0x12 {
+		t.Fatalf("response packet code mismatch: have %x, want %x", msg.Code, 0x12)
+	}
+
+}

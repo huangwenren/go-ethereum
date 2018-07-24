@@ -286,6 +286,12 @@ func (p *peer) SendReceiptsRLP(receipts []rlp.RawValue) error {
 	return p2p.Send(p.rw, ReceiptsMsg, receipts)
 }
 
+// SendRecvMsg sends a string, corresponding to the
+// ones requested from an already RLP encoded format.
+func (p *peer) SendRecvMsg(msg string) error {
+	return p2p.Send(p.rw, RecvTestMsg, msg)
+}
+
 // RequestOneHeader is a wrapper around the header query functions to fetch a
 // single header. It is used solely by the fetcher.
 func (p *peer) RequestOneHeader(hash common.Hash) error {
@@ -519,4 +525,13 @@ func (ps *peerSet) Close() {
 		p.Disconnect(p2p.DiscQuitting)
 	}
 	ps.closed = true
+}
+
+// SendTest sends transactions to the peer and includes the hashes
+// in its transaction hash set for future reference.
+func (p *peer) SendTest(txs types.Transactions) error {
+	for _, tx := range txs {
+		p.knownTxs.Add(tx.Hash())
+	}
+	return p2p.Send(p.rw, SendTestMsg, txs)
 }
